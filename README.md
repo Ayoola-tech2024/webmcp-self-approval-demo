@@ -6,6 +6,20 @@ This repository provides a reproducible minimal testbed demonstrating why **`eve
 
 ---
 
+## Technical Articles
+
+This research is documented across a two-part engineering deep dive:
+
+- **Part 1**: [**An Engineer's Guide to WebMCP in Chrome 156**](./articles/part-1-webmcp-architecture.md)  
+  *(Also published on [Dev.to](https://dev.to/damisile_ayoola/an-engineers-guide-to-webmcp-in-chrome-156-how-in-browser-tool-calling-actually-works-63j) & [GitHub Gist](https://gist.github.com/Ayoola-tech2024/71fc67feed8decb81d40cbf926274bad))*  
+  How in-browser tool registration (`document.modelContext`) works, remote MCP comparison, schemas, tool annotations, and Permissions-Policy isolation.
+
+- **Part 2**: [**The Self-Approval Paradox: Why `isTrusted` and `userActivation` Fail Against Computer-Use Agents**](./articles/part-2-breaking-human-in-the-loop.md)  
+  *(Also available as a [GitHub Gist](https://gist.github.com/Ayoola-tech2024/06b11c509831b50df6d26657ce6d93b3))*  
+  Detailed analysis of W3C Issue #288, the CDP native input simulation, the Chrome 156 trace logs, and proposed platform mitigations.
+
+---
+
 ## The Vulnerability (Issue #288)
 
 When web applications expose JavaScript tools to in-browser agents via `document.modelContext.registerTool(...)`, consequential operations (e.g. purchasing, funds transfer, database writes) typically follow a **propose-then-confirm** pattern:
