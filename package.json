@@ -1,0 +1,20 @@
+{
+  "name": "webmcp-self-approval-demo",
+  "version": "1.0.0",
+  "description": "Minimal test harness demonstrating self-approval vulnerability in WebMCP (W3C Issue #288) using Chrome 156 and CDP input injection",
+  "main": "driver.mjs",
+  "type": "module",
+  "scripts": {
+    "test": "node driver.mjs"
+  },
+  "keywords": [
+    "webmcp",
+    "w3c",
+    "model-context-protocol",
+    "cdp",
+    "security",
+    "user-activation"
+  ],
+  "author": "Ayoola-tech2024",
+  "license": "MIT"
+}

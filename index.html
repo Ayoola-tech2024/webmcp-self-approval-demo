@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Supply — WebMCP approval demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e1116;
+        --panel: #161b22;
+        --line: #2a3038;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --good: #3fb950;
+        --warn: #d29922;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        padding: 24px 28px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
+      header p { margin: 0; color: var(--muted); font-size: 13px; }
+      main {
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) minmax(380px, 460px);
+        gap: 24px;
+        padding: 24px 28px 40px;
+        align-items: start;
+      }
+      h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+      .products { display: grid; gap: 8px; }
+      .product {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .product strong { font-weight: 600; }
+      .product .sku { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .product .price { text-align: right; font-variant-numeric: tabular-nums; }
+      .product .stock { grid-column: 2; text-align: right; color: var(--muted); font-size: 12px; }
+      .product.out { opacity: 0.45; }
+      aside { display: grid; gap: 20px; }
+      #approval {
+        background: var(--panel);
+        border: 1px solid var(--warn);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      #approval h2 { color: var(--warn); }
+      #approval p { margin: 0 0 10px; }
+      #approval .hint { color: var(--muted); font-size: 12px; }
+      #approval code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+      button {
+        font: inherit;
+        padding: 9px 14px;
+        border-radius: 7px;
+        border: 1px solid transparent;
+        background: var(--accent);
+        color: #04121f;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+      #approval .done { color: var(--good); font-weight: 600; }
+      #log {
+        margin: 0;
+        padding: 12px;
+        min-height: 180px;
+        max-height: 340px;
+        overflow: auto;
+        background: #0a0d12;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #c9d1d9;
+        white-space: pre-wrap;
+      }
+      .ok { color: var(--good); }
+      .bad { color: #f85149; }
+      .dim { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Acme Supply — WebMCP approval demo</h1>
+      <p id="status">checking <code>document.modelContext</code>…</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Catalog</h2>
+        <div class="products" id="products"></div>
+      </section>
+
+      <aside>
+        <div id="approval" hidden></div>
+        <section>
+          <h2>Event log</h2>
+          <pre id="log"></pre>
+        </section>
+      </aside>
+    </main>
+
+    <script>
+      const PRODUCTS = [
+        { sku: "DRL-18V", name: "18V cordless drill", price: 89.0, stock: 12 },
+        { sku: "BIT-32", name: "32-piece bit set", price: 24.5, stock: 40 },
+        { sku: "SAW-7", name: "7-inch circular saw", price: 129.0, stock: 5 },
+        { sku: "TAP-5M", name: "5m tape measure", price: 9.75, stock: 100 },
+        { sku: "GLV-L", name: "Large work gloves", price: 12.0, stock: 0 },
+        { sku: "LMP-20", name: "20W work light", price: 34.99, stock: 18 },
+      ];
+
+      const state = {
+        orders: [],
+        log: [],
+        seq: 0,
+        pendingOrderId: null,
+      };
+
+      const money = (n) => "$" + n.toFixed(2);
+      const now = () => new Date().toISOString();
+
+      function log(entry) {
+        state.log.push({ at: now(), ...entry });
+        renderLog();
+      }
+
+      function safeJson(value) {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return "[unserializable]";
+        }
+      }
+
+      function renderLog() {
+        const el = document.getElementById("log");
+        el.textContent = state.log
+          .map((e) => {
+            const { at, type, ...rest } = e;
+            const detail = Object.keys(rest).length ? " " + safeJson(rest) : "";
+            return `${at.slice(11, 23)}  ${type}${detail}`;
+          })
+          .join("\n");
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function renderCatalog() {
+        const el = document.getElementById("products");
+        el.innerHTML = PRODUCTS.map(
+          (p) => `
+          <div class="product${p.stock === 0 ? " out" : ""}">
+            <strong>${p.name}</strong>
+            <span class="price">${money(p.price)}</span>
+            <span class="sku">${p.sku}</span>
+            <span class="stock">${p.stock === 0 ? "out of stock" : p.stock + " in stock"}</span>
+          </div>`
+        ).join("");
+      }
+
+      function setStatus(html) {
+        document.getElementById("status").innerHTML = html;
+      }
+
+      function findProduct(sku) {
+        return PRODUCTS.find((p) => p.sku === sku) || null;
+      }
+
+      function publicProduct(p) {
+        return {
+          sku: p.sku,
+          name: p.name,
+          price: p.price,
+          currency: "USD",
+          inStock: p.stock > 0,
+          stock: p.stock,
+        };
+      }
+
+      function createOrder(sku, quantity) {
+        const product = findProduct(sku);
+        if (!product) return { error: "unknown_sku", message: `No product with SKU ${sku}.` };
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+          return { error: "invalid_quantity", message: "Quantity must be an integer from 1 to 10." };
+        }
+        if (product.stock < quantity) {
+          return { error: "insufficient_stock", message: `Only ${product.stock} left.` };
+        }
+        const order = {
+          id: "ord_" + (++state.seq).toString().padStart(4, "0"),
+          sku,
+          name: product.name,
+          quantity,
+          total: Number((product.price * quantity).toFixed(2)),
+          currency: "USD",
+          status: "pending_approval",
+          createdAt: now(),
+          approvedBy: null,
+          approvalEvent: null,
+        };
+        state.orders.push(order);
+        state.pendingOrderId = order.id;
+        return { order };
+      }
+
+      function renderApproval(order) {
+        const el = document.getElementById("approval");
+        el.hidden = false;
+        el.setAttribute("data-webmcp-user-decision", "");
+        el.innerHTML = `
+          <h2>Pending approval</h2>
+          <p><strong>${order.quantity} × ${order.name}</strong><br />
+          ${money(order.total)} — order <code>${order.id}</code></p>
+          <p class="hint">This panel is marked
+            <code>data-webmcp-user-decision</code>. A conforming host must not
+            synthesize input into it.</p>
+          <button id="approve-order" type="button">Approve order</button>
+          <button id="reject-order" type="button" class="secondary">Reject</button>
+        `;
+
+        document.getElementById("approve-order").addEventListener("click", (event) => {
+          const activation = navigator.userActivation
+            ? {
+                isActive: navigator.userActivation.isActive,
+                hasBeenActive: navigator.userActivation.hasBeenActive,
+              }
+            : null;
+          log({
+            type: "approve_click",
+            orderId: order.id,
+            isTrusted: event.isTrusted,
+            insideMarker: Boolean(event.target.closest("[data-webmcp-user-decision]")),
+            activation,
+          });
+
+          // The strongest check a page can make: reject script-generated clicks.
+          // A host that drives the browser's input pipeline passes this.
+          if (!event.isTrusted) {
+            log({
+              type: "approve_rejected",
+              orderId: order.id,
+              reason: "untrusted_event",
+            });
+            return;
+          }
+
+          order.status = "approved";
+          order.approvedBy = event.isTrusted ? "trusted-event" : "script";
+          order.approvalEvent = {
+            isTrusted: event.isTrusted,
+            insideMarker: Boolean(event.target.closest("[data-webmcp-user-decision]")),
+          };
+          log({ type: "order_approved", orderId: order.id, total: order.total });
+          el.innerHTML = `
+            <h2>Order approved</h2>
+            <p class="done">${order.id} — ${money(order.total)}</p>
+            <p class="hint">Approved by: ${order.approvedBy}</p>
+          `;
+        });
+
+        document.getElementById("reject-order").addEventListener("click", () => {
+          order.status = "rejected";
+          log({ type: "order_rejected", orderId: order.id });
+          el.hidden = true;
+          el.removeAttribute("data-webmcp-user-decision");
+        });
+      }
+
+      const tools = [
+        {
+          name: "search_products",
+          title: "Search products",
+          description:
+            "Search the Acme Supply catalog by name or SKU. Returns compact product cards. Use get_product for full details.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: 'Name or SKU fragment, e.g. "drill".' },
+              maxPrice: { type: "number", minimum: 0 },
+              limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+            },
+            required: ["query"],
+            additionalProperties: false,
+          },
+          annotations: { readOnlyHint: true },
+          async execute(input) {
+            const query = String(input?.query ?? "").trim().toLowerCase();
+            const maxPrice = input?.maxPrice;
+            const limit = input?.limit ?? 5;
+            log({ type: "tool_call", name: "search_products", input: { query, maxPrice, limit } });
+            if (!query) {
+              return { ok: false, error: { code: "invalid_query", message: "query is required" } };
+            }
+            const matches = PRODUCTS.filter((p) => {
+              const hit = p.name.toLowerCase().includes(query) || p.sku.toLowerCase().includes(query);
+              return hit && (maxPrice === undefined || p.price <= maxPrice);
+            }).slice(0, limit);
+            return { ok: true, asOf: now(), products: matches.map(publicProduct) };
+          },
+        },
+        {
+          name: "get_product",
+          title: "Get product",
+          description: "Return the full record for one SKU.",
+          inputSchema: {
+            type: "object",
+            properties: { sku: { type: "string" } },
+            required: ["sku"],
+            additionalProperties: false,
+          },
+          annotations: { readOnlyHint: true },
+          async execute(input) {
+            log({ type: "tool_call", name: "get_product", input: { sku: input?.sku } });
+            const p = findProduct(String(input?.sku ?? ""));
+            return p
+              ? { ok: true, asOf: now(), product: publicProduct(p) }
+              : { ok: false, error: { code: "not_found", message: "Unknown SKU." } };
+          },
+        },
+        {
+          name: "propose_order",
+          title: "Propose an order",
+          description:
+            "Create a pending order and render an approval control. This never places or pays for the order. Returns status pending_approval; the human approves on the page.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              sku: { type: "string" },
+              quantity: { type: "integer", minimum: 1, maximum: 10 },
+            },
+            required: ["sku", "quantity"],
+            additionalProperties: false,
+          },
+          annotations: { readOnlyHint: false, consequentialHint: true },
+          async execute(input) {
+            log({ type: "tool_call", name: "propose_order", input });
+            const result = createOrder(String(input?.sku ?? ""), input?.quantity);
+            if (result.error) return { ok: false, error: result };
+            const { order } = result;
+            renderApproval(order);
+            log({
+              type: "proposal_created",
+              orderId: order.id,
+              total: order.total,
+              status: order.status,
+            });
+            return {
+              ok: true,
+              status: "pending_approval",
+              orderId: order.id,
+              total: order.total,
+              currency: order.currency,
+              approvalRequired: true,
+            };
+          },
+        },
+      ];
+
+      async function registerTools() {
+        const mc = document.modelContext;
+        if (!mc || typeof mc.registerTool !== "function") {
+          setStatus(
+            '<span class="bad">document.modelContext is not available.</span> ' +
+              "Launch Chrome with --enable-features=WebMCP."
+          );
+          window.__ready = true;
+          return;
+        }
+
+        setStatus("WebMCP present. Registering tools…");
+
+        for (const tool of tools) {
+          try {
+            await mc.registerTool(tool);
+            log({ type: "register_ok", name: tool.name, annotations: tool.annotations ?? null });
+          } catch (error) {
+            log({
+              type: "register_failed",
+              name: tool.name,
+              error: String(error),
+            });
+          }
+        }
+
+        try {
+          const registered = await mc.getTools();
+          log({
+            type: "get_tools",
+            count: registered.length,
+            names: registered.map((t) => t.name),
+            first: registered[0]
+              ? {
+                  name: registered[0].name,
+                  annotations: registered[0].annotations ?? null,
+                  inputSchemaType: typeof registered[0].inputSchema,
+                }
+              : null,
+          });
+          setStatus(
+            `<span class="ok">WebMCP active.</span> ${registered.length} tool(s): ` +
+              registered.map((t) => `<code>${t.name}</code>`).join(", ")
+          );
+        } catch (error) {
+          log({ type: "get_tools_failed", error: String(error) });
+          setStatus('<span class="bad">getTools() failed.</span>');
+        }
+
+        window.__ready = true;
+      }
+
+      window.__demo = {
+        state,
+        products: PRODUCTS,
+        findProduct,
+        publicProduct,
+        log,
+      };
+
+      renderCatalog();
+      renderLog();
+      registerTools();
+    </script>
+  </body>
+</html>
